@@ -62,85 +62,13 @@ function pickRandomFrame() {
 }
 
 /* =========================
-   Museum-frame renderer
+   addToGallery() HERE
 ========================= */
-function addToGallery(publicUrl, caption, flagged, createdAt) {
-  if (!galleryEl) return;
 
-  const frame = pickRandomFrame();
-  const title = caption?.trim() || "Untitled";
-  const date = createdAt
-  ? new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      year: "numeric",
-    }).format(new Date(createdAt))
-  : "";
-
-  const wrap = document.createElement("div");
-  wrap.className = "artCard";
-
-  wrap.innerHTML = `
-  <div class="frameStage">
-    <div class="backboard"></div>
-    <div class="artWindow">
-      <div class="artSquare">
-        <img src="${publicUrl}" alt="${escapeHtml(title)}" loading="lazy" />
-      </div>
-    </div>
-    <img class="frameImg" src="${frame.src}" alt="frame" />
-  </div>
-
-  <div class="placard">
-    <div class="placardTitle">${escapeHtml(title)}</div>
-    <div class="placardMeta">Anonymous · ${date}</div>
-  </div>
-`;
-
-  // Apply frame-specific layout using CSS variables
-  const stage = wrap.querySelector(".frameStage");
-  stage.dataset.orient = frame.orient; 
-  stage.style.setProperty("--stage-ratio", frame.stageRatio);
-  stage.style.setProperty("--win-left", frame.win.left + "%");
-  stage.style.setProperty("--win-right", frame.win.right + "%");
-  stage.style.setProperty("--win-top", frame.win.top + "%");
-  stage.style.setProperty("--win-bottom", frame.win.bottom + "%");
-
-  galleryEl.prepend(wrap);
-
-}
 /* =========================
-   Load gallery (newest or random)
+   loadGallery() HERE
 ========================= */
-async function loadGallery(limit = 40, randomize = false) {
-  if (!galleryEl) return;
 
-  try {
-    galleryEl.innerHTML = "";
-
-    // If randomizing, pull a bigger pool then shuffle client-side
-    const poolSize = randomize ? Math.max(500, limit) : limit;
-
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select("path, caption, flagged, created_at")
-      .order("created_at", { ascending: false })
-      .limit(poolSize);
-
-    if (error) throw error;
-
-    let rows = data ?? [];
-    if (randomize) rows = shuffleArray(rows).slice(0, limit);
-    else rows = rows.slice(0, limit);
-
-    for (const row of rows) {
-      const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(row.path);
-      addToGallery(publicData.publicUrl, row.caption ?? "", !!row.flagged, row.created_at);
-    }
-
-  } catch (err) {
-    console.error(err);
-  }
-}
 
 /* =========================
    Drawing palette + canvas 
@@ -305,49 +233,11 @@ function makeCenteredSquarePng(canvas, pad = 24) {
   return out;
 }
 
-async function submitDrawing() {
-  if (!canvas || !ctx) {
-    return;
-  }
+/* =========================
+   submitDrawing() HERE
+========================= */
 
-  try {
-    const caption = (captionEl?.value ?? "").trim().slice(0, 140);
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const flagged = decideFlagging(imageData.data);
-
-    const exportCanvas = makeCenteredSquarePng(canvas, 32);
-    const blob = await new Promise((resolve, reject) => {
-      exportCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
-    });
-
-    const filename = `${Date.now()}-${crypto.randomUUID()}.png`;
-    const path = `public/${filename}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, blob, { contentType: "image/png", upsert: false });
-
-    if (uploadError) throw uploadError;
-
-    const { error: insertError } = await supabase
-      .from(TABLE)
-      .insert([{ path, caption, flagged }]);
-
-    if (insertError) throw insertError;
-
-    // Render immediately if gallery exists on this page
-    const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    addToGallery(publicData.publicUrl, caption, flagged, new Date().toISOString());
-
-    // Reset
-    clearCanvas();
-    if (captionEl) captionEl.value = "";
-
-  } catch (err) {
-    console.error(err);
-  }
-}
 
 // Keep a set so we don't spam duplicates too much
 const seenPaths = new Set();
